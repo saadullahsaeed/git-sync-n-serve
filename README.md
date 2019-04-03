@@ -18,6 +18,8 @@ make build
 
 ```
 make build container
+
+docker run -p 9009:9009 $(REGISTRY):latest --repo https://github.com/EnterpriseQualityCoding/FizzBuzzEnterpriseEdition
 ```
 
 
