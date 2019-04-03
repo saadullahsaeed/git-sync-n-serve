@@ -25,6 +25,7 @@ func main() {
 	flag.String("repo", "", "Repository URL")
 	flag.String("dest", "/tmp/git", "Destination directory")
 	flag.String("branch", "master", "Branch to sync")
+	flag.String("port", "3000", "HTTP Port")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
@@ -52,7 +53,7 @@ func main() {
 		http.Handle("/", fs)
 
 		log.Println("Listening...")
-		http.ListenAndServe(":3000", nil)
+		http.ListenAndServe(fmt.Sprintf(":%s", viper.GetString("port")), nil)
 	}(destPath)
 
 	<-errChan
@@ -122,8 +123,16 @@ func pull(ctx context.Context, path string) error {
 func cloneRepo(ctx context.Context, repo string, path string) error {
 	_, err := git.PlainClone(path, false, &git.CloneOptions{
 		URL:      repo,
-		Progress: os.Stdout,
+		Progress: progressWriter{},
 	})
 	fmt.Println(err)
 	return err
+}
+
+type progressWriter struct {
+}
+
+func (w progressWriter) Write(p []byte) (n int, err error) {
+	fmt.Println(string(p))
+	return len(p), nil
 }
