@@ -3,11 +3,6 @@ PROJECT = git-sync-static
 GOTOOLS = \
 	golang.org/x/tools/cmd/cover \
 	golang.org/x/tools/cmd/goimports \
-	google.golang.org/grpc \
-	github.com/golang/protobuf/protoc-gen-go \
-	github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway \
-	github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger \
-	github.com/golang/dep/cmd/dep \
 
 PREFIX ?= $(shell pwd)
 SOURCE_FILES ?= ./...
@@ -22,7 +17,7 @@ setup: ## Install dev tools
 	@if [ ! -f $(GOPATH)/bin/golangci-lint ]; then \
 		curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin v1.12.5; \
 	fi
-	GO111MODULE=$(GO111MODULE) go get $(GOTOOLS)
+	go get $(GOTOOLS)
 
 .PHONY: test
 test: ## Run all the tests
@@ -61,7 +56,6 @@ help:
 .PHONY: container 
 container:
 	docker build -t $(REGISTRY):latest .
-
 
 .DEFAULT_GOAL := help
 default: help
