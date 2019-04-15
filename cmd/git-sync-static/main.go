@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -12,13 +13,16 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"golang.org/x/crypto/ssh"
 	git "gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	ssh2 "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
 const (
 	defaultTimeout = 30
 
-	defaultWait = 60
+	defaultWait = 10
 )
 
 func main() {
@@ -26,6 +30,7 @@ func main() {
 	flag.String("dest", "/tmp/git", "Destination directory")
 	flag.String("branch", "master", "Branch to sync")
 	flag.String("port", "3000", "HTTP Port")
+	// flag.Bool("ssh", false, "Use SSH")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
@@ -56,7 +61,7 @@ func main() {
 		http.ListenAndServe(fmt.Sprintf(":%s", viper.GetString("port")), nil)
 	}(destPath)
 
-	<-errChan
+	fmt.Println(<-errChan)
 }
 
 // GitSync struct represents something
@@ -65,6 +70,7 @@ type GitSync struct {
 	Destination   string
 	Path          string
 	Branch        string
+	KeyPath       string
 }
 
 // Start ...
@@ -75,7 +81,7 @@ func (gs *GitSync) Start() error {
 		_, err := os.Stat(gs.Path)
 		switch {
 		case os.IsNotExist(err):
-			err := cloneRepo(ctx, gs.RepositoryURL, gs.Path)
+			err := gs.Clone(ctx, gs.RepositoryURL, gs.Path)
 			if err != nil {
 				cancel()
 				return err
@@ -84,7 +90,11 @@ func (gs *GitSync) Start() error {
 			cancel()
 			return fmt.Errorf("error checking if repo exists %q: %v", gs.RepositoryURL, err)
 		default:
-			fmt.Println(pull(ctx, gs.Path))
+			err := gs.Pull(ctx, gs.Path)
+			if err != nil {
+				cancel()
+				return err
+			}
 		}
 
 		cancel()
@@ -92,8 +102,33 @@ func (gs *GitSync) Start() error {
 	}
 }
 
-func pull(ctx context.Context, path string) error {
-	fmt.Println("pull")
+// Pull ...
+func (gs *GitSync) Pull(ctx context.Context, path string) error {
+	var auth transport.AuthMethod
+	var err error
+	if gs.KeyPath != "" {
+		auth, err = getAuth(gs.KeyPath)
+		if err != nil {
+			return err
+		}
+	}
+	return _pull(ctx, path, auth)
+}
+
+// Clone ...
+func (gs *GitSync) Clone(ctx context.Context, repo, path string) error {
+	var auth transport.AuthMethod
+	var err error
+	if gs.KeyPath != "" {
+		auth, err = getAuth(gs.KeyPath)
+		if err != nil {
+			return err
+		}
+	}
+	return _clone(ctx, repo, path, auth)
+}
+
+func _pull(ctx context.Context, path string, auth transport.AuthMethod) error {
 	r, err := git.PlainOpen(path)
 	if err != nil {
 		return err
@@ -105,8 +140,13 @@ func pull(ctx context.Context, path string) error {
 		return err
 	}
 
+	pullops := &git.PullOptions{RemoteName: "origin"}
+	if auth != nil {
+		pullops.Auth = auth
+	}
+
 	// Pull the latest changes from the origin remote and merge into the current branch
-	err = w.Pull(&git.PullOptions{RemoteName: "origin"})
+	err = w.Pull(pullops)
 	if err != nil {
 		return err
 	}
@@ -120,13 +160,31 @@ func pull(ctx context.Context, path string) error {
 	return nil
 }
 
-func cloneRepo(ctx context.Context, repo string, path string) error {
-	_, err := git.PlainClone(path, false, &git.CloneOptions{
+func _clone(ctx context.Context, repo string, path string, auth transport.AuthMethod) error {
+	cloneops := &git.CloneOptions{
 		URL:      repo,
 		Progress: progressWriter{},
-	})
-	fmt.Println(err)
+	}
+
+	if auth != nil {
+		cloneops.Auth = auth
+	}
+
+	_, err := git.PlainClone(path, false, cloneops)
 	return err
+}
+
+func getAuth(keyPath string) (transport.AuthMethod, error) {
+	pem, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	signer, err := ssh.ParsePrivateKey(pem)
+	if err != nil {
+		return nil, err
+	}
+	return &ssh2.PublicKeys{User: "git", Signer: signer}, nil
 }
 
 type progressWriter struct {
