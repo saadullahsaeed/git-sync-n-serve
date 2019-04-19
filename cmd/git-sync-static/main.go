@@ -24,7 +24,7 @@ import (
 const (
 	defaultTimeout = 30
 
-	defaultWait = 10
+	defaultWait = (time.Minute * 60)
 )
 
 func main() {
@@ -62,6 +62,7 @@ func main() {
 
 	//start the server
 	go func(destPath string) {
+		// fs := http.FileServer(http.Dir(destPath))
 		fs := http.FileServer(NewNeuteredFileSystem(http.Dir(destPath)))
 		http.Handle("/", fs)
 
@@ -74,7 +75,7 @@ func main() {
 
 func NewNeuteredFileSystem(fs http.FileSystem) neuteredFileSystem {
 	ns := neuteredFileSystem{fs: fs}
-	ns.dotRegex = regexp.MustCompile(`\.(.*)`)
+	ns.dotRegex = regexp.MustCompile(`^\.(.*)`)
 	return ns
 }
 
@@ -98,8 +99,9 @@ func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
 
 	s, err := f.Stat()
 	if s.IsDir() {
-		index := strings.TrimSuffix(path, "/") + "/index.html"
-		if _, err := nfs.fs.Open(index); err != nil {
+		index := fmt.Sprintf("%s/%s", strings.TrimSuffix(path, "/"), "index.html")
+		_, err := nfs.fs.Open(index)
+		if err != nil {
 			return nil, err
 		}
 	}
