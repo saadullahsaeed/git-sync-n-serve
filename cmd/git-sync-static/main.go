@@ -62,7 +62,7 @@ func main() {
 
 	//start the server
 	go func(destPath string) {
-		fs := http.FileServer(neuteredFileSystem{http.Dir(destPath)})
+		fs := http.FileServer(NewNeuteredFileSystem(http.Dir(destPath)))
 		http.Handle("/", fs)
 
 		log.Println("Listening...")
@@ -70,6 +70,12 @@ func main() {
 	}(destPath)
 
 	fmt.Println(<-errChan)
+}
+
+func NewNeuteredFileSystem(fs http.FileSystem) neuteredFileSystem {
+	ns := neuteredFileSystem{fs: fs}
+	ns.dotRegex = regexp.MustCompile(`\.(.*)`)
+	return ns
 }
 
 type neuteredFileSystem struct {
@@ -84,11 +90,6 @@ func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
 			return nil, errors.New("not found")
 		}
 	}
-
-	// regex := regexp.MustCompile(`\.(.*)`)
-	// if regex.MatchString(path[1:]) {
-	// 	return nil, errors.New("not found")
-	// }
 
 	f, err := nfs.fs.Open(path)
 	if err != nil {
