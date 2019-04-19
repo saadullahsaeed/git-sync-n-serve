@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,7 +32,7 @@ func main() {
 	flag.String("dest", "/tmp/git", "Destination directory")
 	flag.String("branch", "master", "Branch to sync")
 	flag.String("port", "3000", "HTTP Port")
-	// flag.Bool("ssh", false, "Use SSH")
+	flag.String("ssh-key-path", "", "Path of the SSH key for Auth (if using SSH)")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
@@ -47,14 +49,20 @@ func main() {
 	}
 
 	destPath := fmt.Sprintf("%s/%s", dest, parts[len(parts)-1])
-	gs := &GitSync{RepositoryURL: repo, Destination: dest, Path: destPath}
+	gs := &GitSync{
+		RepositoryURL: repo,
+		Destination:   dest,
+		Path:          destPath,
+		KeyPath:       viper.GetString("ssh-key-path"),
+	}
+
 	go func() {
 		errChan <- gs.Start()
 	}()
 
 	//start the server
 	go func(destPath string) {
-		fs := http.FileServer(http.Dir(destPath))
+		fs := http.FileServer(neuteredFileSystem{http.Dir(destPath)})
 		http.Handle("/", fs)
 
 		log.Println("Listening...")
@@ -62,6 +70,39 @@ func main() {
 	}(destPath)
 
 	fmt.Println(<-errChan)
+}
+
+type neuteredFileSystem struct {
+	fs       http.FileSystem
+	dotRegex *regexp.Regexp
+}
+
+func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
+	// we don't want to server .dot directories
+	if nfs.dotRegex != nil {
+		if nfs.dotRegex.MatchString(path[1:]) {
+			return nil, errors.New("not found")
+		}
+	}
+
+	// regex := regexp.MustCompile(`\.(.*)`)
+	// if regex.MatchString(path[1:]) {
+	// 	return nil, errors.New("not found")
+	// }
+
+	f, err := nfs.fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := f.Stat()
+	if s.IsDir() {
+		index := strings.TrimSuffix(path, "/") + "/index.html"
+		if _, err := nfs.fs.Open(index); err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
 }
 
 // GitSync struct represents something
@@ -77,7 +118,6 @@ type GitSync struct {
 func (gs *GitSync) Start() error {
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(defaultTimeout))
-
 		_, err := os.Stat(gs.Path)
 		switch {
 		case os.IsNotExist(err):
@@ -148,15 +188,18 @@ func _pull(ctx context.Context, path string, auth transport.AuthMethod) error {
 	// Pull the latest changes from the origin remote and merge into the current branch
 	err = w.Pull(pullops)
 	if err != nil {
+		// we do not consider this an error
+		if err.Error() == git.NoErrAlreadyUpToDate.Error() {
+			return nil
+		}
 		return err
 	}
 
 	// Print the latest commit that was just pulled
-	ref, err := r.Head()
+	_, err = r.Head()
 	if err != nil {
 		return err
 	}
-	fmt.Println(ref)
 	return nil
 }
 
