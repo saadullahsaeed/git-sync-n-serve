@@ -1,7 +1,8 @@
-# Get-sync-static-server
+# Get-sync-n-server
 
-[This is WIP] Inspried by git-sync, this is an attempt to use the pure Go implementation of git for sync and serving static content from a container.
+Inspried by git-sync, this is an attempt to use the pure Go implementation of git for sync and serving static content using a single binary.
 
+This is not battle tested at all. Please use with caution.
 
 ## Usecase
 
@@ -13,18 +14,8 @@ To deploy a container on Kubernetes that can serve static content and also keep 
 make build
 ```
 
-
-## Build Container
-
-```
-make build container
-
-docker run -p 9009:9009 $(REGISTRY):latest --repo https://github.com/EnterpriseQualityCoding/FizzBuzzEnterpriseEdition
-```
-
-
 ## Usage
 
 ```
-go run cmd/git-sync-static/main.go --repo https://github.com/EnterpriseQualityCoding/FizzBuzzEnterpriseEdition
+go run cmd/git-sync-static/main.go --repo https://github.com/EnterpriseQualityCoding/FizzBuzzEnterpriseEdition --root-dir / --branch master 
 ```
