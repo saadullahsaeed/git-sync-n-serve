@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"gopkg.in/src-d/go-git.v4/plumbing"
+
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-git.v4"
@@ -33,24 +35,33 @@ type GitSync struct {
 
 // Start ...
 func (gs *GitSync) Start() error {
+	var err error
+	defer func() {
+		if err != nil && !os.IsNotExist(err) {
+			gs.Logger.Error(err)
+		}
+	}()
+
 	gs.Logger.WithFields(log.Fields{
 		"repository": gs.RepositoryURL,
 		"path":       gs.Path,
+		"branch":     gs.Branch,
 	}).Info("Starting sync process")
 
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(defaultTimeout))
-		_, err := os.Stat(gs.Path)
+		_, err = os.Stat(gs.Path)
 		switch {
 		case os.IsNotExist(err):
 			gs.Logger.WithFields(log.Fields{
 				"path": gs.Path,
 			}).Info("Git clone")
-			err := gs.Clone(ctx, gs.RepositoryURL, gs.Path)
+			err = gs.Clone(ctx)
 			if err != nil {
 				cancel()
 				return err
 			}
+			gs.Logger.Info("Clone completed")
 		case err != nil:
 			cancel()
 			return fmt.Errorf("error checking if repo exists %q: %v", gs.RepositoryURL, err)
@@ -58,7 +69,7 @@ func (gs *GitSync) Start() error {
 			gs.Logger.WithFields(log.Fields{
 				"path": gs.Path,
 			}).Info("Git pull")
-			err := gs.Pull(ctx, gs.Path)
+			err = gs.Pull(ctx, gs.Path)
 			if err != nil {
 				cancel()
 				return err
@@ -83,7 +94,7 @@ func (gs *GitSync) Pull(ctx context.Context, path string) error {
 }
 
 // Clone ...
-func (gs *GitSync) Clone(ctx context.Context, repo, path string) error {
+func (gs *GitSync) Clone(ctx context.Context) error {
 	var auth transport.AuthMethod
 	var err error
 	if gs.KeyPath != "" {
@@ -92,7 +103,7 @@ func (gs *GitSync) Clone(ctx context.Context, repo, path string) error {
 			return err
 		}
 	}
-	return _clone(ctx, repo, path, auth)
+	return _clone(ctx, gs.RepositoryURL, gs.Branch, gs.Path, auth)
 }
 
 func _pull(ctx context.Context, path string, auth transport.AuthMethod) error {
@@ -127,10 +138,11 @@ func _pull(ctx context.Context, path string, auth transport.AuthMethod) error {
 	return nil
 }
 
-func _clone(ctx context.Context, repo string, path string, auth transport.AuthMethod) error {
+func _clone(ctx context.Context, repo, branch, path string, auth transport.AuthMethod) error {
 	cloneops := &git.CloneOptions{
-		URL:      repo,
-		Progress: progressWriter{},
+		URL:           repo,
+		Progress:      progressWriter{},
+		ReferenceName: plumbing.NewBranchReferenceName(branch),
 	}
 
 	if auth != nil {
