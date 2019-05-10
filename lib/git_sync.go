@@ -31,6 +31,7 @@ type GitSync struct {
 	KeyPath                string
 	KnownHostsVerification bool
 	Logger                 *log.Entry
+	EventChannel           chan Event
 }
 
 // Start ...
@@ -62,6 +63,8 @@ func (gs *GitSync) Start() error {
 				return err
 			}
 			gs.Logger.Info("Clone completed")
+			gs.Logger.Info("event")
+			gs.EventChannel <- Event{Repository: gs.RepositoryURL, Action: "Cloned"}
 		case err != nil:
 			cancel()
 			return fmt.Errorf("error checking if repo exists %q: %v", gs.RepositoryURL, err)
@@ -76,6 +79,8 @@ func (gs *GitSync) Start() error {
 			}
 		}
 		cancel()
+		gs.Logger.Info("event")
+		gs.EventChannel <- Event{Repository: gs.RepositoryURL, Action: "Updated"}
 		time.Sleep(time.Minute * time.Duration(defaultWait))
 	}
 }

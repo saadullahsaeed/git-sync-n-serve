@@ -24,6 +24,10 @@ func main() {
 	flag.String("ssh-key-path", "", "Path of the SSH key for Auth (if using SSH)")
 	flag.Bool("ssh-known-hosts", true, "Toggle SSH known_hosts verification")
 
+	flag.String("webhook-url", "", "URL to post the webook request to")
+	flag.String("webhook-method", "POST", "HTTP Method for the webhook")
+	flag.String("webhook-payload-template", "{{ .String }}", "Template for the webhook payload")
+
 	//Server flags
 	flag.String("root-dir", "/", "root directory to serve")
 
@@ -43,6 +47,8 @@ func main() {
 
 	logger := log.WithContext(context.Background())
 	destPath := fmt.Sprintf("%s/%s", dest, parts[len(parts)-1])
+
+	webhookChan := make(chan syncserve.Event, 1)
 	gs := &syncserve.GitSync{
 		RepositoryURL:          repo,
 		Destination:            dest,
@@ -51,6 +57,18 @@ func main() {
 		KeyPath:                viper.GetString("ssh-key-path"),
 		KnownHostsVerification: viper.GetBool("ssh-known-hosts"),
 		Logger:                 logger,
+		EventChannel:           webhookChan,
+	}
+
+	wURL := viper.GetString("webhook-url")
+	if strings.TrimSpace(wURL) != "" {
+		webhooks := &syncserve.Webhook{
+			URL:             wURL,
+			Method:          viper.GetString("webhook-method"),
+			PayloadTemplate: viper.GetString("webhook-payload-template"),
+			Logger:          logger,
+		}
+		go webhooks.Start(webhookChan)
 	}
 
 	go func() {
